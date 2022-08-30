@@ -1,6 +1,6 @@
 <?php
 
-	//lib_nikolay_telegram_api.php v 2022-08-29-21-00 https://t.me/skl256
+	//lib_nikolay_telegram_api.php v 2022-08-30-15-50 https://t.me/skl256
 	
 	/*Перед использованием необходимо убедиться в наличии модулей php-curl, при необходимости установить: sudo apt-get install php-curl
 	
@@ -35,7 +35,16 @@
 	//Если вы не хотите использовать кеширование файлов, установите эту опцию как false
 	
 	function getUpdate($secret_token = "") { //Возвращает JSON поступившего события, проверяет соответсвие HTTP(S)-заголовка X-Telegram-Bot-Api-Secret-Token строке $secret_token, если строка не пуста
-		$header_x_telegram_bot_api_secret_token = (isset(getallheaders()['X-Telegram-Bot-Api-Secret-Token'])) ? (getallheaders()['X-Telegram-Bot-Api-Secret-Token']) : ("");
+		$header_x_telegram_bot_api_secret_token = "";
+		if (function_exists('getallheaders')) {
+			if (isset(getallheaders()['X-Telegram-Bot-Api-Secret-Token'])) {
+				$header_x_telegram_bot_api_secret_token = getallheaders()['X-Telegram-Bot-Api-Secret-Token'];
+			}
+		} else {
+			if (isset($_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'])) {
+				$header_x_telegram_bot_api_secret_token = $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'];
+			}
+		}
 		if (($secret_token == "") || ($secret_token == $header_x_telegram_bot_api_secret_token)) {
 			$data = file_get_contents('php://input');//Использование $data = getUpdate();
 			writeLog("REQUEST", $data);//Получение содержимого $data['message']['text'] или $data['callback_query']['data'] ...
