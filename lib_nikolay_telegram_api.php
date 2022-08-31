@@ -1,6 +1,6 @@
 <?php
 
-	//lib_nikolay_telegram_api.php v 2022-08-31-18-30 https://t.me/skl256
+	//lib_nikolay_telegram_api.php v 2022-09-01-00-33 https://t.me/skl256
 	
 	/*Перед использованием необходимо убедиться в наличии модулей php-curl, при необходимости установить: sudo apt-get install php-curl
 	
@@ -13,7 +13,7 @@
 	
 	Доступные методы: (описания методов имеются в комментариях по коду)
 	function getUpdate($secret_token);
-	getUpdateLongPolling($timeout = 0, &$offset = 0);
+	getUpdateLongPolling($timeout = 0, &$offset = 0, &$result_ok = false)
 	function sendMessage($chat_id, $text, $reply_markup = null);
 	function sendSticker($chat_id, $filename, $reply_markup = null);
 	function sendPhoto($chat_id, $caption, $filename, $reply_markup = null);
@@ -60,22 +60,25 @@
 		}
 	}
 	
-	function getUpdateLongPolling($timeout = 0, &$offset = 0) { //Использование $data = getUpdate(); //Получение содержимого $data['message']['text'] или $data['callback_query']['data'] ...
+	function getUpdateLongPolling($timeout = 0, &$offset = 0, &$result_ok = false) { //Использование $data = getUpdate(); //Получение содержимого $data['message']['text'] или $data['callback_query']['data'] ...
 		$post_fields['limit'] = 1; //Возвращает JSON первого неподтвержденного поступившего события, и присваивает $offset update_id, для того, чтобы получить следующее событие, необходимо будет вызвать функцию с update_id++
 		$post_fields['timeout'] = $timeout; //Для работы с long polling $timeout необходимо указать > 0, тогда функция будет ждать поступления события (но завершится по таймауту php и/или curl через некоторое время после отсутствия события)
-		if ($offset !=0 ) { $post_fields['offset'] = $offset; }
+		if ($offset !=0 ) { $post_fields['offset'] = $offset; } //Если необходимо знать завершился ли запрос ошибкой, либо вернул false просто по причине отсутствия новых Update, можно использовать перемнную $result_ok
 		$response = sendTelegramRequest("getUpdates", $post_fields, false);
 		$json_response = json_decode($response, true);
 		if ((!empty($json_response)) && (isset($json_response['result']))) {
 			if ((isset($json_response['result'][0])) && (isset($json_response['result'][0]['update_id']))) {
 				writeLog("REQUEST", $response);
 				$offset = $json_response['result'][0]['update_id'];
+				$result_ok = true;
 				return $json_response['result'][0];
 			} else { //Если $json_response['result'] не содержит индекса с  [0] значит он пустой, т.е. запрос getUpdates отправлен успешно, но обновления отсутствуют
+				$result_ok = true;
 				return false;
 			}
 		} else { //Если $json_response пустой или не содержит ['result'] значит имеется ошибка и ответ записывается в лог
 			writeLog("REQUEST", $response);
+			$result_ok = false;
 			return false;
 		}
 	}
