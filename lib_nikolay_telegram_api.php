@@ -1,6 +1,6 @@
 <?php
 
-	//lib_nikolay_telegram_api.php v 2022-08-30-15-50 https://t.me/skl256
+	//lib_nikolay_telegram_api.php v 2022-08-31-18-30 https://t.me/skl256
 	
 	/*Перед использованием необходимо убедиться в наличии модулей php-curl, при необходимости установить: sudo apt-get install php-curl
 	
@@ -13,6 +13,7 @@
 	
 	Доступные методы: (описания методов имеются в комментариях по коду)
 	function getUpdate($secret_token);
+	getUpdateLongPolling($timeout = 0, &$offset = 0);
 	function sendMessage($chat_id, $text, $reply_markup = null);
 	function sendSticker($chat_id, $filename, $reply_markup = null);
 	function sendPhoto($chat_id, $caption, $filename, $reply_markup = null);
@@ -34,23 +35,47 @@
 	//!!!функция searchCachedFileId и storeCachedFileId использует файл для хранения кешей и представлена в качестве примера, её необходимо переопределить для стабильной работы и производительности
 	//Если вы не хотите использовать кеширование файлов, установите эту опцию как false
 	
-	function getUpdate($secret_token = "") { //Возвращает JSON поступившего события, проверяет соответсвие HTTP(S)-заголовка X-Telegram-Bot-Api-Secret-Token строке $secret_token, если строка не пуста
-		$header_x_telegram_bot_api_secret_token = "";
-		if (function_exists('getallheaders')) {
-			if (isset(getallheaders()['X-Telegram-Bot-Api-Secret-Token'])) {
-				$header_x_telegram_bot_api_secret_token = getallheaders()['X-Telegram-Bot-Api-Secret-Token'];
+	function getUpdate($secret_token = "") { //Использование $data = getUpdate(); //Получение содержимого $data['message']['text'] или $data['callback_query']['data'] ...
+		$data = file_get_contents('php://input'); //Возвращает JSON поступившего события, проверяет соответсвие HTTP(S)-заголовка X-Telegram-Bot-Api-Secret-Token строке $secret_token, если строка не пуста
+		if ($data != "") {
+			$header_x_telegram_bot_api_secret_token = "";
+			if (function_exists('getallheaders')) {
+				if (isset(getallheaders()['X-Telegram-Bot-Api-Secret-Token'])) {
+					$header_x_telegram_bot_api_secret_token = getallheaders()['X-Telegram-Bot-Api-Secret-Token'];
+				}
+			} else {
+				if (isset($_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'])) {
+					$header_x_telegram_bot_api_secret_token = $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'];
+				}
 			}
-		} else {
-			if (isset($_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'])) {
-				$header_x_telegram_bot_api_secret_token = $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'];
+			if (($secret_token == "") || ($secret_token == $header_x_telegram_bot_api_secret_token)) {
+				writeLog("REQUEST", $data);
+				return json_decode($data, true);
+			} else {
+				writeLog("REQUEST", "ACCESS DENIED VIA HTTP(S) HEADER X-Telegram-Bot-Api-Secret-Token = $header_x_telegram_bot_api_secret_token");
+				return false;
 			}
+		} else { //Если $data == "" значит в Webhook не переданы никакие данные, возможно запрос к Webhook не от Telegram API. Запись в лог в таком случае не производится, для того, чтобы исключить лишние записи в случае, если к данному скрипту выполняются и другие запросы, не только от Telegram API.
+			return false;
 		}
-		if (($secret_token == "") || ($secret_token == $header_x_telegram_bot_api_secret_token)) {
-			$data = file_get_contents('php://input');//Использование $data = getUpdate();
-			writeLog("REQUEST", $data);//Получение содержимого $data['message']['text'] или $data['callback_query']['data'] ...
-			return json_decode($data, true);
-		} else {
-			writeLog("REQUEST", "ACCESS DENIED VIA HTTP(S) HEADER X-Telegram-Bot-Api-Secret-Token = $header_x_telegram_bot_api_secret_token");
+	}
+	
+	function getUpdateLongPolling($timeout = 0, &$offset = 0) { //Использование $data = getUpdate(); //Получение содержимого $data['message']['text'] или $data['callback_query']['data'] ...
+		$post_fields['limit'] = 1; //Возвращает JSON первого неподтвержденного поступившего события, и присваивает $offset update_id, для того, чтобы получить следующее событие, необходимо будет вызвать функцию с update_id++
+		$post_fields['timeout'] = $timeout; //Для работы с long polling $timeout необходимо указать > 0, тогда функция будет ждать поступления события (но завершится по таймауту php и/или curl через некоторое время после отсутствия события)
+		if ($offset !=0 ) { $post_fields['offset'] = $offset; }
+		$response = sendTelegramRequest("getUpdates", $post_fields, false);
+		$json_response = json_decode($response, true);
+		if ((!empty($json_response)) && (isset($json_response['result']))) {
+			if ((isset($json_response['result'][0])) && (isset($json_response['result'][0]['update_id']))) {
+				writeLog("REQUEST", $response);
+				$offset = $json_response['result'][0]['update_id'];
+				return $json_response['result'][0];
+			} else { //Если $json_response['result'] не содержит индекса с  [0] значит он пустой, т.е. запрос getUpdates отправлен успешно, но обновления отсутствуют
+				return false;
+			}
+		} else { //Если $json_response пустой или не содержит ['result'] значит имеется ошибка и ответ записывается в лог
+			writeLog("REQUEST", $response);
 			return false;
 		}
 	}
@@ -390,14 +415,14 @@
 		$ch_post[CURLOPT_URL] = 'https://api.telegram.org/bot' . BOT_TOKEN . "/$method";//пример заполнения поля для загрузки файлов:
 		$ch_post[CURLOPT_POST] = true;//'photo' => curl_file_create($filename , mime_content_type($filename), basename($filename))
 		$ch_post[CURLOPT_RETURNTRANSFER] = true;
-		$ch_post[CURLOPT_TIMEOUT] = 10;
+		$ch_post[CURLOPT_TIMEOUT] = ($method != "getUpdates") ? 10 : 0;
 		if ($add_header_multipart_form_data) {
 			$ch_post[CURLOPT_HTTPHEADER] = array("Content-Type" => "multipart/form-data");
 		}
 		$ch_post[CURLOPT_POSTFIELDS] = $post_fields;
 		curl_setopt_array($ch, $ch_post);
 		$response = curl_exec($ch);
-		writeLog("SEND", $response);
+		if ($method != "getUpdates") { writeLog("SEND", $response); }
 		return $response;
 	}
 	
