@@ -1,6 +1,6 @@
 <?php
 
-	//lib_nikolay_telegram_api.php v 2022-09-01-00-33 https://t.me/skl256
+	//lib_nikolay_telegram_api.php v 2022-09-16-22-05 https://t.me/skl256
 	
 	/*Перед использованием необходимо убедиться в наличии модулей php-curl, при необходимости установить: sudo apt-get install php-curl
 	
@@ -15,6 +15,8 @@
 	function getUpdate($secret_token);
 	getUpdateLongPolling($timeout = 0, &$offset = 0, &$result_ok = false)
 	function sendMessage($chat_id, $text, $reply_markup = null);
+	function forwardMessage($chat_id, $from_chat_id, $message_id, $disable_notification = null);
+	function copyMessage($chat_id, $from_chat_id, $message_id, $reply_markup = null, $disable_notification = null);
 	function sendSticker($chat_id, $filename, $reply_markup = null);
 	function sendPhoto($chat_id, $caption, $filename, $reply_markup = null);
 	function sendVideo($chat_id, $caption, $filename, $reply_markup = null);
@@ -31,6 +33,7 @@
 	function setMyCommands($commands);
 	*/
 	
+	define("MAX_CURL_TIMEOUT_FOR_LONG_POLLING", 300); //Максимальное время ожидания обновления перед закрытием соединения, только для режима long polling
 	define("USE_CACHE_FOR_TELEGRAM_FILE_ID", true); //При отправке файлов проверять, отправлялся ли данный файл ранее, и отправлять telegram file_id вместо файла
 	//!!!функция searchCachedFileId и storeCachedFileId использует файл для хранения кешей и представлена в качестве примера, её необходимо переопределить для стабильной работы и производительности
 	//Если вы не хотите использовать кеширование файлов, установите эту опцию как false
@@ -84,13 +87,47 @@
 	}
 	
 	function sendMessage($chat_id, $text, $reply_markup = null, $disable_notification = null) { //Возвращает ID отправленного сообщения или false в случае ошибки
-		writeLog("SEND", "sendMessage($chat_id, " . preg_replace('|(<code>).+(</code>)|isU', "*Data inside <code> block is not logged*", $text) . ", $reply_markup)");
+		writeLog("SEND", "sendMessage($chat_id, $text, $reply_markup)");
 		$post_fields['chat_id'] = $chat_id;
 		$post_fields['text'] = $text;
 		$post_fields['parse_mode'] = "HTML";
 		if ($reply_markup != null) { $post_fields['reply_markup'] = $reply_markup; }
 		if ($disable_notification != null) { $post_fields['disable_notification'] = $disable_notification; }
 		$response = sendTelegramRequest("sendMessage", $post_fields, false);
+		$json_response = json_decode($response, true);
+		if (!empty($json_response['result']['message_id'])) {
+			return $json_response['result']['message_id'];
+		} else {
+			writeLog("ERROR", "MESSAGE ID IS EMPTY IN $response");
+			return false;
+		}
+	}
+	
+	function forwardMessage($chat_id, $from_chat_id, $message_id, $disable_notification = null) {
+		writeLog("SEND", "forwardMessage($chat_id, $from_chat_id, $message_id)");
+		$post_fields['chat_id'] = $chat_id;
+		$post_fields['from_chat_id'] = $from_chat_id;
+		$post_fields['message_id'] = $message_id;
+		if ($disable_notification != null) { $post_fields['disable_notification'] = $disable_notification; }
+		$response = sendTelegramRequest("forwardMessage", $post_fields, false);
+		$json_response = json_decode($response, true);
+		if (!empty($json_response['result']['message_id'])) {
+			return $json_response['result']['message_id'];
+		} else {
+			writeLog("ERROR", "MESSAGE ID IS EMPTY IN $response");
+			return false;
+		}
+	}
+	
+	function copyMessage($chat_id, $from_chat_id, $message_id, $reply_markup = null, $disable_notification = null) {
+		writeLog("SEND", "copyMessage($chat_id, $from_chat_id, $message_id, $reply_markup)");
+		$post_fields['chat_id'] = $chat_id;
+		$post_fields['from_chat_id'] = $from_chat_id;
+		$post_fields['message_id'] = $message_id;
+		$post_fields['parse_mode'] = "HTML";
+		if ($reply_markup != null) { $post_fields['reply_markup'] = $reply_markup; }
+		if ($disable_notification != null) { $post_fields['disable_notification'] = $disable_notification; }
+		$response = sendTelegramRequest("copyMessage", $post_fields, false);
 		$json_response = json_decode($response, true);
 		if (!empty($json_response['result']['message_id'])) {
 			return $json_response['result']['message_id'];
@@ -418,7 +455,7 @@
 		$ch_post[CURLOPT_URL] = 'https://api.telegram.org/bot' . BOT_TOKEN . "/$method";//пример заполнения поля для загрузки файлов:
 		$ch_post[CURLOPT_POST] = true;//'photo' => curl_file_create($filename , mime_content_type($filename), basename($filename))
 		$ch_post[CURLOPT_RETURNTRANSFER] = true;
-		$ch_post[CURLOPT_TIMEOUT] = ($method != "getUpdates") ? 10 : 0;
+		$ch_post[CURLOPT_TIMEOUT] = ($method != "getUpdates") ? 10 : MAX_CURL_TIMEOUT_FOR_LONG_POLLING;
 		if ($add_header_multipart_form_data) {
 			$ch_post[CURLOPT_HTTPHEADER] = array("Content-Type" => "multipart/form-data");
 		}
