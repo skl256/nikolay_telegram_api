@@ -1,6 +1,6 @@
 <?php
 
-	//lib_nikolay_telegram_api.php v 2022-09-16-22-05 https://t.me/skl256
+	//lib_nikolay_telegram_api.php v 2022-10-01-20-37 https://t.me/skl256
 	
 	/*Перед использованием необходимо убедиться в наличии модулей php-curl, при необходимости установить: sudo apt-get install php-curl
 	
@@ -462,7 +462,10 @@
 		$ch_post[CURLOPT_POSTFIELDS] = $post_fields;
 		curl_setopt_array($ch, $ch_post);
 		$response = curl_exec($ch);
-		if ($method != "getUpdates") { writeLog("SEND", $response); }
+		if ($method != "getUpdates") { //При работе в режиме long polling при обработке запросов getUpdateLongPolling ответы CURL не записываются в writeLog, т.к. большинство из них будут пустые, либо TIMED OUT, однако успешные будут записаны самой фунукцией getUpdateLongPolling
+			writeLog("SEND", $response);
+			if (curl_errno($ch)) { writeLog("ERROR", curl_error($ch) . " CURL ERROR CODE = " . curl_errno($ch) . " IN sendTelegramRequest(...) WITH API METHOD $method"); }
+		}
 		return $response;
 	}
 	
@@ -574,7 +577,7 @@
 	
 	/*Пример настройки логгирования и определения функции writeLog()
 	
-	define("LOG_PATH_SALT", "01234567890abcdef"); //Указать секректную строку, которая будет добавляться к имени .txt файла лога, для затруднения несанционированного доступа
+	define("LOG_PATH_SALT", "01234567890abcdef"); //Указать секректную строку, которая будет добавляться к имени .txt файла лога, для затруднения несанкционированного доступа
 		//к файлу через HTTP
 	ini_set("log_errors", "On");
 	ini_set("error_log", "log_PHP_" . LOG_PATH_SALT . ".txt");
